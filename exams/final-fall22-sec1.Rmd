@@ -2,8 +2,8 @@
 title: "Take-home Final Exam"
 subtitle: "Data 180, Professor Bilen"
 author: 
-  name: "Your Name"
-  email: "XXXX@dickinson.edu"
+  name: "Charlie Kim"
+  email: "kimch@dickinson.edu"
 date: '`r format(Sys.Date(), "%B %d, %Y")`'
 output: 
   html_document
@@ -71,7 +71,7 @@ Read this table into R and create the object chess using
 
 ```{r}
 chess<-read.csv("chess.csv",header=T,row.names=1) # try full path to file if you get a file missing error
-chess %>% head()
+chess
 ```
 
 In a chess game, the side who plays more “accurately” throughout the game is more likely to become the winner. The variable CPLoss measures the mistakes resulting from a move, with their amounts measured in “centipawns”. (100 centipawns = 1 pawn) The measurements were done with the help of Stockfish 13. Stockfish is a modern “super-computer” chess engine that plays chess stronger than any human player who ever lived.
@@ -87,27 +87,92 @@ where *n* is the number of moves played by a given player in a given game. A hig
 # Question 1
 Calculate the ACPL for each side in each game in the data. Store this information in a new column named `ACPL`.
 ```{r}
+chess %>% group_by(Game_id, Side) %>% summarize(n = max(Ply))
+chess %>% group_by(Game_id, Side) %>% summarize(Sum_CPL = sum(CPLoss))
 
+ACPL <- chess %>% group_by(Game_id, Side) %>% summarize(ACPL = sum(CPLoss)/max(Ply))
+head(ACPL)
 ```
+
 
 # Question 2
 Do we really observe that playing less accurately leads to a higher chance to lose a game? Run a linear probability regression where your X variable is `ACPL` and Y variable is `Win`. Interpret your coefficient and explain your result in plain words. *(Hint: Make sure to consider only decisive games when evaluating the variable `Win`, i.e., think about what Win=0 implies in terms of game outcome.)*
+
 ```{r}
+library(AER)
+
+chess2 <-chess %>% group_by(Game_id, Side, Win) %>% summarize(ACPL = sum(CPLoss)/max(Ply))
+chess2
+
+chess.mod1 <- lm(Win ~ ACPL, data = chess2)
+chess.mod1
+
+plot(x = chess2$ACPL, 
+     y = chess2$Win,
+          main = "Scatterplot Result of the Game and ACPL",
+     xlab = "ACPL(Average Centipawn Loss)",
+     ylab = "Win",
+          pch = 20,
+     ylim = c(-0.4, 1.4),
+     cex.main = 0.8)
+abline(h = 1, lty = 2, col = "darkred")
+abline(h = 0, lty = 2, col = "darkred")
+text(80, 0.9, cex = 0.8, "Win")
+text(80, -0.1, cex= 0.8, "Lose or Draw")
+abline(chess.mod1, 
+       lwd = 1.8, 
+       col = "steelblue")
+
+coeftest(chess.mod1, vcov. = vcovHC, type = "HC1")
+
+# The model suggests that there is a positive relation between ACPL and the probability of winning the chess game so players scoring a higher ACPL in the game are more likely to win the game.
+
+# Every 1 point increase in ACPL leads to an increase in the probability of winning the game by 0.24%  
+
+#However, Higher ACPL indicates that that the player committed more mistakes, on average, in that particular game. Maybe there is a confounding variable.
 
 ```
 
 # Question 3
 Plot a histogram for `ACPL`. Is it skewed? Why do you think the distribution appears the way it does?
-```{r}
 
+```{r}
+ggplot(chess2,aes(ACPL)) + geom_histogram()
+
+# It is skewed to right. 
+
+# A plausible explanation could be that most players participating in the tournament have similar ACPL per game but there are few players that are relatively unexperienced or sometimes make critical mistake that caused their ACPL to exceed the average and become outlier.
 ```
 
 
 
 # Question 4
 In "Blitz" chess, players get a significantly smaller amount of time to think per move. Does having less time per move lead to players making more mistakes? Test this hypothesis using a simple linear regression. Interpret your result with plain words.
-```{r}
 
+```{r}
+chess3 <-chess %>% group_by(Game_id, Side, Blitz, Win) %>% summarize(SumMis = sum(Mistake))
+chess3
+
+chess.mod2 <- lm(SumMis ~ Blitz, data = chess3)
+chess.mod2
+
+plot(x = chess3$Blitz, 
+     y = chess3$SumMis,
+          main = "Scatterplot Whether game is Blitz Chess or not vs Number of Mistake made per game",
+     xlab = "Blitz",
+     ylab = "Number of Mistake per game")
+
+abline(h = 1, lty = 2, col = "darkred")
+abline(h = 0, lty = 2, col = "darkred")
+abline(chess.mod2, 
+       lwd = 1.8, 
+       col = "steelblue")
+
+coeftest(chess.mod2, vcov. = vcovHC, type = "HC1")
+
+# The regression suggests that there is a positive relation between Gaming using Blitz time control and the average mistakes made per chess game so players that played in Blitz chess manner are more likely to make mistake.
+
+# If the Game is Blitz chess the number of mistakes made by the player in the game increase by 1.53.
 ```
 
 
@@ -115,15 +180,75 @@ Elo rating is the official ranking system used by the International Chess Federa
 
 # Question 5
 Do stronger players play more accurately? Test this hypothesis using a simple linear regression separately for "classical" and "blitz" time-variants. Plot a scatterplot (one for each time-variant) of `ACPL` on the y-axis and Elo rating on the x-axis for all players in the sample. Explain your results in plain words. What do your findings imply? *(Hint: This task requires some data-wrangling. Notice there is no single "Elo" variable at the current state of the data. You need to create a single Elo rating column, which means you need to create a "longer" version of the data. `rbind()` is a function that can come in handy, which is used to append two dataframes together.)*
-```{r}
 
+
+```{r}
+chess <- chess %>% mutate(Elo=ifelse(Side == "W", print(chess$WhiteElo), print(chess$BlackElo)))
+chess
+```
+
+```{r}
+classic <- chess %>% filter(Blitz == 0) %>% group_by(Game_id, Side, Elo) %>% summarize(ACPL = sum(CPLoss)/max(Ply))
+
+classic
+
+chess.mod3 <- lm(ACPL ~ Elo, data = classic)
+summary(chess.mod3)
+
+plot(classic$Elo, classic$ACPL)
+
+abline(chess.mod3,lwd=2,col="red")
+
+# The regression suggests that there is a negative relation between Elo score and the ACPL of the player when playing Classic chess game. So players scoring a higher Elo are less likely to make mistake, thus more accurate when time given per move is sufficient.
+
+# Every 1 point increase in Elo score leads to an decrease in ACPL of the player in the game by 0.034 point.
+```
+
+
+```{r}
+blitz <- chess %>% filter(Blitz == 1) %>% group_by(Game_id, Side, Elo) %>% summarize(ACPL = sum(CPLoss)/max(Ply))
+
+blitz
+
+chess.mod4 <- lm(ACPL ~ Elo, data = blitz)
+summary(chess.mod4)
+
+plot(blitz$Elo, blitz$ACPL)
+
+abline(chess.mod4,lwd=2,col="red")
+
+# The prediction model suggests that there is a positive relation between Elo score and the ACPL of the player when playing Blitz chess game. So players scoring higher in Elo are more likely to make mistake, thus less accurate when time given per move is limited.
+
+# Every 1 point increase in Elo score leads to an increase in ACPL of the player in the game by 0.082 point.
+```
+```{r}
+# Based on these series of Simple Linear Regression, we can see that players with higher Elo score do relatively well when given sufficient time in game to make a move, while become less accurate when playing in a more limited time setting. This may imply that Elo score is developed when classic chess game was popular (or Blitz might have not started).
 ```
 
 
 # Question 6
 Predict the expected `ACPL` of a player with Elo rating of 2700 using a linear regression. Restrict your sample to classical games only. Interpret your results. *(Hint: You should use your dataframe from Question 5, where there is only one Elo rating column, and you have a "longer" version of the data at hand.)*
 ```{r}
+trainingloc <- sample(1:nrow(classic), 0.8*nrow(classic))
+training <- classic[trainingloc, ]
 
+testloc <- setdiff(1:nrow(classic), trainingloc)
+test <- classic[testloc, ]
+
+trained_model <- lm(ACPL ~ Elo, data=training)
+
+summary(trained_model)
+
+preds <- trained_model$coefficients[1] + trained_model$coefficients[2] * test$Elo
+
+plot(test$Elo, preds,col=c('red'),ylab='ACPL', xlab='ELO',cex=1.25)
+par(new=TRUE)
+plot(test$Elo, test$ACPL,col=c('blue'),ann=FALSE, axes=FALSE,cex=1.25)
+
+y <- trained_model$coefficients[1] + trained_model$coefficients[2] *2700
+y
+
+# The expected `ACPL` of a player with Elo rating of 2700 is 16.51.
 ```
 
 
@@ -131,12 +256,57 @@ Predict the expected `ACPL` of a player with Elo rating of 2700 using a linear r
 Predict the expected `ACPL` of a player with Elo rating of 2700 using a decision tree. Restrict your sample to classical games only. Are your results different than in Question 6? Explain.
 
 ```{r}
+library(ISLR)
+library(tree)
+
+trainingloc <- sample(1:nrow(classic), 0.8*nrow(classic))
+training <- classic[trainingloc, ]
+
+testloc <- setdiff(1:nrow(classic), trainingloc)
+test <- classic[testloc, ]
+treefit <- tree(ACPL ~ Elo, data=training)
+
+summary(treefit)
+plot(treefit)
+text(treefit,cex=0.75)
+
+preds2 <- data.frame('ACPL_pred' = predict(treefit, test))
+preds2
+
+check <- data.frame('actual' = classic[rownames(preds2),]$ACPL, 
+                    'pred' = preds2[,1], 'Elo' = classic[rownames(preds2),]$Elo)
+check
+
+plot(check$Elo, check$actual, col='red')
+par(new=TRUE)
+plot(check$Elo, check$pred, col='blue',ann=FALSE, axes=FALSE)
+
+# 5 termial node
+
+# The ACPL of a player with Elo rating of 2700 predicted using a decision tree is 13.10.
+
+# The result is different from the prediction using Linear regression. While Regression model drew 1:1 prediction to a given observation, Decision tree predicted the ACPL value based on the range of the observation(e.g. if 2694 < x < 2776.5, y = 13.10). 
+
+# Also, the result is keep changing every run, so I assume that the prediction is not that reliable. It might give a different value when runned again during correction.
 
 ```
 
 # Question 8
 Split your sample to training and test samples. Keep 80% of your data in the training sample, the remaining in the test sample. Make sure to keep only classical games. Train a linear regression model, and a decision tree using your training sample. Then test your model by making predictions of `ACPL` using Elo ratings on the test sample. What is the Mean Squared Error (MSE) of the linear model? What is the MSE of the decision tree? Which model do you prefer. Why? 
 ```{r}
+# Already calculated in Question 6 and 7.
+
+# MSE = ((Observed - Predictioned)^2)/n(observation)
+
+#Linear
+sum((test$ACPL - preds)^2)/length(test)
+## 1351.32
+
+#Tree
+sum((check$actual - check$pred)^2)/length(check)
+## 2245.744
+
+# Considering the MSE, the Linear regression model seems more preferred, since the MSE is smaller, indicating it is a better fit to the actual data.
 
 ```
 
@@ -146,7 +316,17 @@ Split your sample to training and test samples. Keep 80% of your data in the tra
 Each chess opening gets an ECO classification. (ECO stands for "Encyclopedia of Chess Openings", which is a classification system used in chess that categorizes chess openings) What are the names of the three most popular chess openings played in the sample?
 *Hint: You can go to (https://www.chessgames.com/chessecohelp.html)[https://www.chessgames.com/chessecohelp.html] for a list of ECO codes and their corresponding opening names.*
 ```{r}
+chess <- chess %>% mutate(ECOletter = str_sub(ECO,0,1), ECOdigit = str_sub(ECO,-2))
 
+x <- chess %>% distinct(ECO,Game_id, Side) %>%  filter(Side == "W") %>% mutate(ECOletter = str_sub(ECO,0,1), ECOdigit = str_sub(ECO,-2))
+x
+
+library('vctrs')
+vec_count(x$ECO)
+
+# 1. D37(Queen's Gambit Declined)
+## 2. C67(Ruy Lopez)
+### 3. C53(Giuoco Piano)
 ```
 
 
@@ -162,7 +342,16 @@ chess <- chess %>% group_by(Game_id,Side) %>% mutate(CPLsd = sd(CPLoss)) # gets 
 ``` 
 
 ```{r}
+chess5 <- chess %>% mutate(sicilian = ifelse(ECOletter == "B" & between(ECOdigit,20,90),1,0))
+chess6 <- chess %>% group_by(Game_id,Side) %>% mutate(CPLsd = sd(CPLoss))
+chess6
 
+chess.mod4 <- lm(CPLsd ~ sicilian, data = chess6)
+summary(chess.mod4)
+
+# The regression suggests that there is a positive relation between Sicilian opening and the standard deviation of CP Loss. So games with Sicilian opening are more likely have more "ups and downs" in computer evaluation.
+
+# If the Game starts with Sicilian opening the standard deviation of CP Loss in the game increase by 3.502 points.
 ```
 
 
@@ -171,7 +360,11 @@ Let’s do some basic move-level analysis. Can you identify around what move # t
 *(Hint: You should compute the average `CPLoss` for each `Ply`.)*
 
 ```{r}
+mistake <- chess  %>% filter(Ply <= 80) %>% group_by(Ply) %>% mutate(AveCPL = sum(CPLoss)/2,2) %>% arrange(desc(AveCPL)) %>% select(Ply, AveCPL)
 
+mistake
+
+# Based on the table of Top AveCPL for each play, within first 80 moves, players make most mistkae at move # 28. 
 ```
 
 
@@ -180,14 +373,45 @@ Let’s do some basic move-level analysis. Can you identify around what move # t
 # Question 12
 Considering all of this, should you castle? Compare the means of win rate between players who did and who did not castle during a game.
 ```{r}
+Castle <- chess %>% select(Game_id, Side, Win, Castle)
+Castle <- Castle %>% filter(Win == 1, Castle == 1)
+Castle
+length(unique(Castle$Game_id))
 
+#Rate of Wining and Castle move was made
+132/328 
+##0.4024
+
+NotCastle <- chess %>% select(Game_id, Side, Win, NotCastled)
+NotCastle <- NotCastle %>% filter(Win == 1, NotCastled == 1)
+NotCastle
+length(unique(NotCastle$Game_id))
+
+#Rate of Wining and Castle move was not made
+5/328
+##0.015
+
+# Yes, The rate of wining when Castling(0.4024) move was made is much higher than when NotCastling move was made(0.015).
 ```
 
 
 # Question 13
 If your answer to the previous is yes, *when* should you castle? *(Hint: In other words, what move # for castling over all castling moves played gives the highest win rate?)*
 ```{r}
+Castle2 <- chess %>% filter(Win == 1, Castle == 1) %>% select(Game_id, Side, Ply,Win,Castle)
+Castle2
 
+
+
+calculate_mode <- function(x) {
+  uniqx <- unique(na.omit(x))
+  uniqx[which.max(tabulate(match(x, uniqx)))]
+}
+
+calculate_mode(Castle2$Ply)
+# The Players won the most when they made Castling move at move #5.
+
+# Most of the Castling moves when the player won the game was made prior to move # 20. So Castling move should be done early in the game.
 ```
 
 
