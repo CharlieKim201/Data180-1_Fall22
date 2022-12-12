@@ -343,7 +343,7 @@ chess <- chess %>% group_by(Game_id,Side) %>% mutate(CPLsd = sd(CPLoss)) # gets 
 
 ```{r}
 chess5 <- chess %>% mutate(sicilian = ifelse(ECOletter == "B" & between(ECOdigit,20,90),1,0))
-chess6 <- chess %>% group_by(Game_id,Side) %>% mutate(CPLsd = sd(CPLoss))
+chess6 <- chess5 %>% group_by(Game_id,Side) %>% mutate(CPLsd = sd(CPLoss))
 chess6
 
 chess.mod4 <- lm(CPLsd ~ sicilian, data = chess6)
@@ -400,7 +400,6 @@ If your answer to the previous is yes, *when* should you castle? *(Hint: In othe
 ```{r}
 Castle2 <- chess %>% filter(Win == 1, Castle == 1) %>% select(Game_id, Side, Ply,Win,Castle)
 Castle2
-
 
 
 calculate_mode <- function(x) {
